@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { MediaCard } from "@/components/media/MediaCard";
 import { MediaDetailDialog } from "@/components/media/MediaDetailDialog";
+import { groupByType } from "@/lib/groupByType";
 
 interface DashboardEntry {
   id: string;
@@ -35,10 +36,11 @@ interface Selected {
 
 interface DashboardSectionsProps {
   inProgress: DashboardEntry[];
+  wantToConsume: DashboardEntry[];
   recentCompleted: DashboardEntry[];
 }
 
-export function DashboardSections({ inProgress, recentCompleted }: DashboardSectionsProps) {
+export function DashboardSections({ inProgress, wantToConsume, recentCompleted }: DashboardSectionsProps) {
   const router = useRouter();
   const [selected, setSelected] = useState<Selected | null>(null);
 
@@ -85,21 +87,31 @@ export function DashboardSections({ inProgress, recentCompleted }: DashboardSect
     );
   }
 
+  function renderGroupedSection(title: string, entries: DashboardEntry[]) {
+    const groups = groupByType(entries);
+    if (groups.length === 0) return null;
+    return (
+      <section>
+        <h2 className="text-lg font-semibold text-zinc-900 mb-3">{title}</h2>
+        <div className="flex flex-col gap-6">
+          {groups.map((group) => (
+            <div key={group.type}>
+              <h3 className="text-sm font-medium text-zinc-500 mb-2">
+                {group.icon} {group.label}
+              </h3>
+              {renderGrid(group.entries)}
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
   return (
     <>
-      {inProgress.length > 0 && (
-        <section>
-          <h2 className="text-lg font-semibold text-zinc-900 mb-3">Currently consuming</h2>
-          {renderGrid(inProgress)}
-        </section>
-      )}
-
-      {recentCompleted.length > 0 && (
-        <section>
-          <h2 className="text-lg font-semibold text-zinc-900 mb-3">Recently completed</h2>
-          {renderGrid(recentCompleted)}
-        </section>
-      )}
+      {renderGroupedSection("Currently consuming", inProgress)}
+      {renderGroupedSection("Want to consume", wantToConsume)}
+      {renderGroupedSection("Recently completed", recentCompleted)}
 
       {selected && (
         <MediaDetailDialog
