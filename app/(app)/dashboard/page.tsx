@@ -43,6 +43,7 @@ export default async function DashboardPage() {
   }
 
   const inProgress = entries.filter((e) => e.status === "IN_PROGRESS").map(serialize);
+  const wantToConsume = entries.filter((e) => e.status === "WANT").map(serialize);
   const recentCompleted = entries
     .filter((e) => e.status === "COMPLETED")
     .slice(0, 10)
@@ -106,7 +107,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* In progress + recently completed (client component for dialog support) */}
-      <DashboardSections inProgress={inProgress} recentCompleted={recentCompleted} />
+      <DashboardSections inProgress={inProgress} wantToConsume={wantToConsume} recentCompleted={recentCompleted} />
 
       {entries.length === 0 && (
         <div className="flex flex-col items-center gap-4 py-20 text-center">
