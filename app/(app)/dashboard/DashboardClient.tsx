@@ -24,7 +24,7 @@ import { StackedCards } from '@/components/media/StackedCards'
 import { SortableMediaCard } from '@/components/media/SortableMediaCard'
 import { SetNextUpButton } from '@/components/media/SetNextUpButton'
 import { DiscoverSection } from '@/components/media/DiscoverSection'
-import { MEDIA_TYPE_LABELS, MEDIA_TYPE_ICONS } from '@/lib/utils'
+import { cn, MEDIA_TYPE_LABELS, MEDIA_TYPE_ICONS } from '@/lib/utils'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -51,22 +51,11 @@ interface EntryData {
   listeningProgress: ListeningProgressData | null
 }
 
-interface StatData {
-  type: string
-  label: string
-  icon: string
-  total: number
-  completed: number
-  inProgress: number
-  want: number
-}
-
 interface DashboardClientProps {
   userName: string
   inProgress: EntryData[]
   wantEntries: EntryData[]
   recentCompleted: EntryData[]
-  statsByType: StatData[]
   categoryOrder: string[]
   isEmpty: boolean
 }
@@ -82,6 +71,15 @@ function groupByType(entries: EntryData[]): Record<string, EntryData[]> {
   }
   return groups
 }
+
+const FILTER_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'MOVIE', label: MEDIA_TYPE_LABELS['MOVIE'] },
+  { value: 'TV_SHOW', label: MEDIA_TYPE_LABELS['TV_SHOW'] },
+  { value: 'BOOK', label: MEDIA_TYPE_LABELS['BOOK'] },
+  { value: 'AUDIOBOOK', label: MEDIA_TYPE_LABELS['AUDIOBOOK'] },
+  { value: 'VIDEO_GAME', label: MEDIA_TYPE_LABELS['VIDEO_GAME'] },
+]
 
 // ── Sortable Want category (drag-and-drop when expanded) ─────────────────────
 
@@ -215,6 +213,7 @@ interface SectionProps {
   categoryOrder: string[]
   showNextUp?: boolean
   sortable?: boolean
+  activeFilter: string
 }
 
 function DashboardSection({
@@ -224,14 +223,22 @@ function DashboardSection({
   categoryOrder,
   showNextUp,
   sortable,
+  activeFilter,
 }: SectionProps) {
+  // Filter entries by active type filter
+  const filteredEntries =
+    activeFilter === 'all'
+      ? entries
+      : entries.filter((e) => e.mediaItem.type === activeFilter)
+
+  // Section-level collapse: auto-collapse when no matching entries
+  const [manualCollapsed, setManualCollapsed] = useState(false)
+  const isCollapsed = filteredEntries.length === 0 ? true : manualCollapsed
+
   const [expandedTypes, setExpandedTypes] = useState<Record<string, boolean>>({})
 
-  if (entries.length === 0) return null
-
-  const groups = groupByType(entries)
+  const groups = groupByType(filteredEntries)
   const activeTypes = categoryOrder.filter((t) => (groups[t]?.length ?? 0) > 0)
-  if (activeTypes.length === 0) return null
 
   const toggleType = (type: string) => {
     setExpandedTypes((prev) => ({ ...prev, [type]: !prev[type] }))
@@ -239,66 +246,84 @@ function DashboardSection({
 
   return (
     <section>
-      <h2 className="text-lg font-semibold text-zinc-900 mb-4">{title}</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {activeTypes.map((type) => {
-          const typeEntries = groups[type]
+      {/* Section header — always visible */}
+      <button
+        onClick={() => {
+          if (filteredEntries.length > 0) setManualCollapsed((v) => !v)
+        }}
+        className="flex items-center gap-2 w-full text-left mb-4 group"
+        aria-expanded={!isCollapsed}
+      >
+        <h2 className="text-lg font-semibold text-zinc-900">{title}</h2>
+        <span className="text-sm text-zinc-400">({filteredEntries.length})</span>
+        <span className="ml-auto text-zinc-400">
+          {isCollapsed ? (
+            <ChevronDown className="h-4 w-4" />
+          ) : (
+            <ChevronUp className="h-4 w-4" />
+          )}
+        </span>
+      </button>
 
-          // Want queue — sortable with DnD, but expand state lifted here for col-span
-          if (sortable) {
+      {!isCollapsed && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {activeTypes.map((type) => {
+            const typeEntries = groups[type]
+
+            if (sortable) {
+              const isExpanded = expandedTypes[type] ?? false
+              return (
+                <div key={`${sectionKey}-${type}`} className={isExpanded ? 'md:col-span-2' : ''}>
+                  <SortableWantCategory
+                    type={type}
+                    initialEntries={typeEntries}
+                    isExpanded={isExpanded}
+                    onToggle={() => toggleType(type)}
+                  />
+                </div>
+              )
+            }
+
             const isExpanded = expandedTypes[type] ?? false
+            const cards = typeEntries.map((entry, idx) => (
+              <div key={entry.id} className="flex flex-col gap-1">
+                <MediaCard
+                  id={entry.mediaItem.id}
+                  title={entry.mediaItem.title}
+                  year={entry.mediaItem.year}
+                  posterUrl={entry.mediaItem.posterUrl}
+                  mediaType={entry.mediaItem.type}
+                  status={entry.status}
+                  rating={entry.rating}
+                  href={`/item/${entry.id}`}
+                  listeningProgress={entry.listeningProgress}
+                  metadata={entry.mediaItem.metadata}
+                />
+                {showNextUp && (
+                  <div className="flex justify-center">
+                    <SetNextUpButton entryId={entry.id} isNextUp={idx === 0} />
+                  </div>
+                )}
+              </div>
+            ))
+
             return (
-              <div key={`${sectionKey}-${type}`} className={isExpanded ? 'md:col-span-2' : ''}>
-                <SortableWantCategory
-                  type={type}
-                  initialEntries={typeEntries}
+              <div
+                key={`${sectionKey}-${type}`}
+                className={isExpanded ? 'md:col-span-2' : ''}
+              >
+                <CollapsibleCategory
+                  mediaType={type}
                   isExpanded={isExpanded}
                   onToggle={() => toggleType(type)}
-                />
+                >
+                  {cards}
+                </CollapsibleCategory>
               </div>
             )
-          }
-
-          // Non-sortable: use CollapsibleCategory with stacked preview
-          const isExpanded = expandedTypes[type] ?? false
-          const cards = typeEntries.map((entry, idx) => (
-            <div key={entry.id} className="flex flex-col gap-1">
-              <MediaCard
-                id={entry.mediaItem.id}
-                title={entry.mediaItem.title}
-                year={entry.mediaItem.year}
-                posterUrl={entry.mediaItem.posterUrl}
-                mediaType={entry.mediaItem.type}
-                status={entry.status}
-                rating={entry.rating}
-                href={`/item/${entry.id}`}
-                listeningProgress={entry.listeningProgress}
-                metadata={entry.mediaItem.metadata}
-              />
-              {showNextUp && (
-                <div className="flex justify-center">
-                  <SetNextUpButton entryId={entry.id} isNextUp={idx === 0} />
-                </div>
-              )}
-            </div>
-          ))
-
-          return (
-            <div
-              key={`${sectionKey}-${type}`}
-              className={isExpanded ? 'md:col-span-2' : ''}
-            >
-              <CollapsibleCategory
-                mediaType={type}
-                isExpanded={isExpanded}
-                onToggle={() => toggleType(type)}
-              >
-                {cards}
-              </CollapsibleCategory>
-            </div>
-          )
-        })}
-      </div>
+          })}
+        </div>
+      )}
     </section>
   )
 }
@@ -310,10 +335,11 @@ export function DashboardClient({
   inProgress,
   wantEntries,
   recentCompleted,
-  statsByType,
   categoryOrder,
   isEmpty,
 }: DashboardClientProps) {
+  const [activeFilter, setActiveFilter] = useState<string>('all')
+
   return (
     <div className="flex flex-col gap-8">
       {/* Header */}
@@ -338,41 +364,53 @@ export function DashboardClient({
         </div>
       </div>
 
-      {/* Stats grid */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {statsByType.map((s) => (
-          <div key={s.type} className="rounded-xl border border-zinc-200 bg-white p-4">
-            <div className="text-2xl mb-1">{s.icon}</div>
-            <div className="text-sm font-medium text-zinc-700">{s.label}</div>
-            <div className="text-2xl font-bold text-zinc-900">{s.total}</div>
-            <div className="text-xs text-zinc-400 mt-1">
-              {s.completed} done · {s.inProgress} in progress
-            </div>
-          </div>
-        ))}
+      {/* Sticky type filter bar */}
+      <div className="sticky top-14 z-30 -mx-4 px-4 py-2 bg-white/90 backdrop-blur-sm border-b border-zinc-100">
+        <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+          {FILTER_OPTIONS.map(({ value, label }) => (
+            <button
+              key={value}
+              onClick={() => setActiveFilter(value)}
+              className={cn(
+                'flex-shrink-0 rounded-full px-3 py-1 text-sm font-medium transition-colors',
+                activeFilter === value
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <DashboardSection
+        key={`in-progress-${activeFilter}`}
         sectionKey="in-progress"
         title="Currently Consuming"
         entries={inProgress}
         categoryOrder={categoryOrder}
+        activeFilter={activeFilter}
       />
 
       <DashboardSection
+        key={`want-${activeFilter}`}
         sectionKey="want"
         title="Want to Consume"
         entries={wantEntries}
         categoryOrder={categoryOrder}
         showNextUp
         sortable
+        activeFilter={activeFilter}
       />
 
       <DashboardSection
+        key={`completed-${activeFilter}`}
         sectionKey="completed"
         title="Recently Consumed"
         entries={recentCompleted}
         categoryOrder={categoryOrder}
+        activeFilter={activeFilter}
       />
 
       <DiscoverSection />
@@ -396,4 +434,3 @@ export function DashboardClient({
   )
 }
 
-export { MEDIA_TYPE_LABELS, MEDIA_TYPE_ICONS }
